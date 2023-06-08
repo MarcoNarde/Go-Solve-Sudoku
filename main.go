@@ -1,8 +1,13 @@
 package main
 
 import (
+	"bufio"
+	"flag"
 	"fmt"
 	"math/rand"
+	"os"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -104,15 +109,11 @@ func (S *Solver) SolveSudoku() [9][9]int {
 		case elim := <-S.tempElim:
 			S.tempBoard[elim.y][elim.x] = elim.eliminatedValues
 		case <-time.After(2 * time.Second):
-			/*if !startGridCheck {
-				for i := 0; i < 9; i++ {
-					for j := 0; j < 9; j++ {
-						fmt.Printf("cella [%d][%d] = %v\n", i, j, S.tempBoard[i][j])
-					}
+			for i := 0; i < 9; i++ {
+				for j := 0; j < 9; j++ {
+					fmt.Printf("cella [%d][%d] = %v\n", i, j, S.tempBoard[i][j])
 				}
-				startGridCheck = true
-				S.StartGridCheck()
-			}*/
+			}
 			// Inizializza il generatore di numeri casuali con un seed diverso ad ogni esecuzione
 			rand.Seed(time.Now().UnixNano())
 
@@ -243,19 +244,56 @@ func (S *Solver) StartGridCheck() {
 	}
 }
 
+// ReadSudokuFromFile legge il file specificato e restituisce la matrice sudoku
+func ReadSudokuFromFile(filePath string) ([9][9]int, error) {
+	var sudoku [9][9]int
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		return sudoku, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	row := 0
+	for scanner.Scan() {
+		line := scanner.Text()
+		values := strings.Split(line, " ")
+
+		for col, val := range values {
+			num, err := strconv.Atoi(val)
+			if err != nil {
+				return sudoku, err
+			}
+			sudoku[row][col] = num
+		}
+
+		row++
+	}
+
+	if err := scanner.Err(); err != nil {
+		return sudoku, err
+	}
+
+	return sudoku, nil
+}
+
 // Works for easy but not medium
 func main() {
 
-	var sudoku = [9][9]int{
-		{2, 0, 0, 0, 0, 0, 6, 9, 0},
-		{0, 5, 0, 0, 0, 3, 0, 0, 0},
-		{1, 7, 0, 0, 0, 9, 4, 0, 5},
-		{0, 0, 3, 0, 2, 5, 0, 1, 8},
-		{0, 0, 0, 0, 4, 0, 0, 0, 0},
-		{7, 2, 0, 3, 8, 0, 5, 0, 0},
-		{5, 0, 2, 6, 0, 0, 0, 4, 1},
-		{0, 0, 0, 5, 0, 0, 0, 7, 0},
-		{0, 6, 7, 0, 0, 0, 0, 0, 3},
+	// Definisci un flag di tipo string per il percorso del file
+	filePath := flag.String("file", "", "Percorso del file di input")
+	flag.Parse()
+
+	if *filePath == "" {
+		fmt.Println("Percorso del file mancante. Utilizzo: go run main.go -file <percorso_file>")
+		return
+	}
+
+	sudoku, err := ReadSudokuFromFile(*filePath)
+	if err != nil {
+		fmt.Println("Errore durante la lettura del file:", err)
+		return
 	}
 
 	startTime := time.Now()
@@ -267,7 +305,7 @@ func main() {
 			}
 		}
 	}
-	var solution = solver.SolveSudoku()
+	solution := solver.SolveSudoku()
 	elapsedTime := time.Since(startTime)
 	fmt.Println("Last solution")
 	fmt.Println(solution)
