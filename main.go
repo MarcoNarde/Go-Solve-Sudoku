@@ -332,6 +332,21 @@ func (S *Solver) CheckRow(rowN int, activate <-chan int) {
 	}
 }
 
+func PrettyPrintSudoku(sudoku [9][9]int) {
+	for row := 0; row < 9; row++ {
+		if row%3 == 0 && row != 0 {
+			fmt.Println("---------------------")
+		}
+		for col := 0; col < 9; col++ {
+			if col%3 == 0 && col != 0 {
+				fmt.Print("| ")
+			}
+			fmt.Printf("%d ", sudoku[row][col])
+		}
+		fmt.Println()
+	}
+}
+
 // ReadSudokuFromFile legge il file specificato e restituisce la matrice sudoku
 func ReadSudokuFromFile(filePath string) ([9][9]int, error) {
 	var sudoku [9][9]int
@@ -412,7 +427,7 @@ func main() {
 	elapsedTime := time.Since(startTime).Seconds()
 	elapsedTimeFormatted := fmt.Sprintf("%.4f", elapsedTime)
 	fmt.Println("Last solution")
-	fmt.Println(solution)
+	PrettyPrintSudoku(solution)
 	fmt.Println("Elapsed time:", elapsedTimeFormatted)
 	// Leggi il secondo file se il percorso è stato specificato
 	if *solutionFilePath != "" {
