@@ -36,6 +36,7 @@ type Solver struct {
 	solvedSudokuBoard [9][9]int
 	callGrid          [9]chan int
 	callRow           [9]chan int
+	callLockedGrid    [9]chan int
 }
 
 func SolveSquare(x, y int, notContain <-chan int, done chan Solution, tempElim chan<- TemporalElim) {
@@ -77,6 +78,7 @@ func NewSolver() (S *Solver) {
 	}
 	S.StartGridCheck()
 	S.StartRowCheck()
+	S.StartLockedCandCheck()
 	return S
 }
 
@@ -121,31 +123,39 @@ func (S *Solver) SolveSudoku() [9][9]int {
 			rand.Seed(time.Now().UnixNano())
 
 			// Genera un numero casuale tra 0 e 8 compresi
-			//randomChoice := rand.Intn(9)
+			randomChoice := rand.Intn(2)
 			//randomNumber := rand.Intn(9)
 			/*if randomChoice == 0 {
 				S.callGrid[randomNumber] <- 1
 			} else {
 				S.callRow[randomNumber] <- 1
 			}*/
-			S.callGrid[0] <- 1
-			S.callGrid[1] <- 1
-			S.callGrid[2] <- 1
-			S.callGrid[3] <- 1
-			S.callGrid[4] <- 1
-			S.callGrid[5] <- 1
-			S.callGrid[6] <- 1
-			S.callGrid[7] <- 1
-			S.callGrid[8] <- 1
-			S.callRow[0] <- 1
-			S.callRow[1] <- 1
-			S.callRow[2] <- 1
-			S.callRow[3] <- 1
-			S.callRow[4] <- 1
-			S.callRow[5] <- 1
-			S.callRow[6] <- 1
-			S.callRow[7] <- 1
-			S.callRow[8] <- 1
+			if randomChoice == 0 {
+				fmt.Println("Grid Check")
+				S.callGrid[0] <- 1
+				S.callGrid[1] <- 1
+				S.callGrid[2] <- 1
+				S.callGrid[3] <- 1
+				S.callGrid[4] <- 1
+				S.callGrid[5] <- 1
+				S.callGrid[6] <- 1
+				S.callGrid[7] <- 1
+				S.callGrid[8] <- 1
+				S.callRow[0] <- 1
+				S.callRow[1] <- 1
+				S.callRow[2] <- 1
+				S.callRow[3] <- 1
+				S.callRow[4] <- 1
+				S.callRow[5] <- 1
+				S.callRow[6] <- 1
+				S.callRow[7] <- 1
+				S.callRow[8] <- 1
+			} else {
+				fmt.Println("Locked Check")
+				randomNumber := rand.Intn(9)
+				S.callLockedGrid[randomNumber] <- 1
+				S.callLockedGrid[randomNumber+1%9] <- 1
+			}
 		}
 	}
 
@@ -193,7 +203,6 @@ func (S *Solver) CheckGrid(i int, j int, activate <-chan int) {
 
 	for {
 		<-activate
-		isHiddenSingle := false
 		//fmt.Printf("Start grid check for [%d,%d]\n\n", i, j)
 
 		var callWithOneValue [3][3]int
@@ -249,74 +258,12 @@ func (S *Solver) CheckGrid(i int, j int, activate <-chan int) {
 				var cell = cellTrack[value]
 				//fmt.Printf("Lenght: %d", len(cell))
 				if len(cell) == 1 {
-					isHiddenSingle = true
 					for i := 1; i <= 9; i++ {
 						if i != (value + 1) {
 							S.notContain[cell[0].X][cell[0].Y] <- i
 						}
 					}
 					//fmt.Printf("Unique value %d can be assigned to cell [%d,%d] in grid (%d,%d)\n", value+1, cell[0].X, cell[0].Y, i, j)
-				}
-			}
-		}
-
-		// Implementazione Locked candidate
-		if !isHiddenSingle {
-			valueCount2 := make(map[int]int)
-			cellTrack2 := make(map[int][]Coordinates)
-
-			// Scorrimento delle caselle nella griglia corrente e conteggio dei valori
-			for row := startRow; row < startRow+3; row++ {
-				for col := startCol; col < startCol+3; col++ {
-					if callWithOneValue[row-startRow][col-startCol] == 1 {
-						for i := 0; i < 9; i++ {
-							if S.tempBoard[row][col][i] != 0 {
-								valueCount2[i]++
-								cellTrack2[i] = append(cellTrack2[i], Coordinates{row, col})
-							}
-						}
-					}
-				}
-			}
-
-			for value, c := range valueCount2 {
-				if c == 3 || c == 2 {
-					var cells = cellTrack2[value]
-					// Controllo che ogni cella sia nella stessa riga o colonna
-					var row, col int
-					var i = 0
-					rowColCount := make(map[int]int)
-					for _, cell := range cells {
-						if i == 0 {
-							row = cell.X
-							col = cell.Y
-							rowColCount[row]++
-							rowColCount[col]++
-						} else {
-							if cell.X == row {
-								rowColCount[row]++
-							}
-							if cell.Y == col {
-								rowColCount[col]++
-							}
-						}
-						i++
-					}
-					if rowColCount[row] == c {
-						// Invio value a tutta la riga (tranne alle celle di questa griglia)
-						for c := 0; c < 9; c++ {
-							if c < startCol || c > startCol+2 {
-								S.notContain[row][c] <- value + 1
-							}
-						}
-					} else if rowColCount[col] == c {
-						// Invio value a tutta la riga (tranne alle celle di questa griglia)
-						for c := 0; c < 9; c++ {
-							if c < startRow || c > startRow+2 {
-								S.notContain[c][col] <- value + 1
-							}
-						}
-					}
 				}
 			}
 		}
@@ -328,6 +275,15 @@ func (S *Solver) StartGridCheck() {
 		for j := 0; j < 3; j++ {
 			S.callGrid[(i*3)+j] = make(chan int)
 			go S.CheckGrid(i, j, S.callGrid[(i*3)+j])
+		}
+	}
+}
+
+func (S *Solver) StartLockedCandCheck() {
+	for i := 0; i < 3; i++ {
+		for j := 0; j < 3; j++ {
+			S.callLockedGrid[(i*3)+j] = make(chan int)
+			go S.CheckLockedCandidate(i, j, S.callLockedGrid[(i*3)+j])
 		}
 	}
 }
@@ -389,6 +345,93 @@ func (S *Solver) CheckRow(rowN int, activate <-chan int) {
 						}
 					}
 					//fmt.Printf("Unique value %d can be assigned to cell [%d,%d] in cell (%d)\n", value+1, rowN, cell[0], rowN)
+				}
+			}
+		}
+	}
+}
+
+func (S *Solver) CheckLockedCandidate(i int, j int, activate <-chan int) {
+	// Calcolo degli indici di inizio per la griglia corrente
+	startRow := i * 3 // es i=1 ->  sr = 3
+	startCol := j * 3
+
+	for {
+		<-activate
+
+		var callWithOneValue [3][3]int
+
+		// Controllo le celle che contengono almeno 2 valori
+		for row := startRow; row < startRow+3; row++ {
+			for col := startCol; col < startCol+3; col++ {
+				var count = 0
+				for i := 0; i < 9; i++ {
+					if S.tempBoard[row][col][i] != 0 {
+						count++
+					}
+				}
+				if count >= 2 {
+					callWithOneValue[row-startRow][col-startCol] = 1
+					//fmt.Printf("Cella [%d,%d] inclusa", row, col)
+				}
+			}
+		}
+
+		// Implementazione Locked candidate
+		valueCount2 := make(map[int]int)
+		cellTrack2 := make(map[int][]Coordinates)
+
+		// Scorrimento delle caselle nella griglia corrente e conteggio dei valori
+		for row := startRow; row < startRow+3; row++ {
+			for col := startCol; col < startCol+3; col++ {
+				if callWithOneValue[row-startRow][col-startCol] == 1 {
+					for i := 0; i < 9; i++ {
+						if S.tempBoard[row][col][i] != 0 {
+							valueCount2[i]++
+							cellTrack2[i] = append(cellTrack2[i], Coordinates{row, col})
+						}
+					}
+				}
+			}
+		}
+
+		for value, c := range valueCount2 {
+			if c == 3 || c == 2 {
+				var cells = cellTrack2[value]
+				// Controllo che ogni cella sia nella stessa riga o colonna
+				var row, col int
+				var i = 0
+				rowColCount := make(map[int]int)
+				for _, cell := range cells {
+					if i == 0 {
+						row = cell.X
+						col = cell.Y
+						rowColCount[row]++
+						rowColCount[col]++
+					} else {
+						if cell.X == row {
+							rowColCount[row]++
+						}
+						if cell.Y == col {
+							rowColCount[col]++
+						}
+					}
+					i++
+				}
+				if rowColCount[row] == c {
+					// Invio value a tutta la riga (tranne alle celle di questa griglia)
+					for c := 0; c < 9; c++ {
+						if c < startCol || c > startCol+2 {
+							S.notContain[row][c] <- value + 1
+						}
+					}
+				} else if rowColCount[col] == c {
+					// Invio value a tutta la riga (tranne alle celle di questa griglia)
+					for c := 0; c < 9; c++ {
+						if c < startRow || c > startRow+2 {
+							S.notContain[c][col] <- value + 1
+						}
+					}
 				}
 			}
 		}
