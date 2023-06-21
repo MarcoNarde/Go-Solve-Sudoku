@@ -17,6 +17,7 @@ type Solution struct { //Square
 	v int // content of the cell in (x,y)
 }
 
+// TODO: invertire i termini, o cambiare nome in row e col
 type Coordinates struct {
 	X, Y int
 }
@@ -192,7 +193,7 @@ func (S *Solver) CheckGrid(i int, j int, activate <-chan int) {
 
 	for {
 		<-activate
-
+		isHiddenSingle := false
 		//fmt.Printf("Start grid check for [%d,%d]\n\n", i, j)
 
 		var callWithOneValue [3][3]int
@@ -248,12 +249,74 @@ func (S *Solver) CheckGrid(i int, j int, activate <-chan int) {
 				var cell = cellTrack[value]
 				//fmt.Printf("Lenght: %d", len(cell))
 				if len(cell) == 1 {
+					isHiddenSingle = true
 					for i := 1; i <= 9; i++ {
 						if i != (value + 1) {
 							S.notContain[cell[0].X][cell[0].Y] <- i
 						}
 					}
 					//fmt.Printf("Unique value %d can be assigned to cell [%d,%d] in grid (%d,%d)\n", value+1, cell[0].X, cell[0].Y, i, j)
+				}
+			}
+		}
+
+		// Implementazione Locked candidate
+		if !isHiddenSingle {
+			valueCount2 := make(map[int]int)
+			cellTrack2 := make(map[int][]Coordinates)
+
+			// Scorrimento delle caselle nella griglia corrente e conteggio dei valori
+			for row := startRow; row < startRow+3; row++ {
+				for col := startCol; col < startCol+3; col++ {
+					if callWithOneValue[row-startRow][col-startCol] == 1 {
+						for i := 0; i < 9; i++ {
+							if S.tempBoard[row][col][i] != 0 {
+								valueCount2[i]++
+								cellTrack2[i] = append(cellTrack2[i], Coordinates{row, col})
+							}
+						}
+					}
+				}
+			}
+
+			for value, c := range valueCount2 {
+				if c == 3 || c == 2 {
+					var cells = cellTrack2[value]
+					// Controllo che ogni cella sia nella stessa riga o colonna
+					var row, col int
+					var i = 0
+					rowColCount := make(map[int]int)
+					for _, cell := range cells {
+						if i == 0 {
+							row = cell.X
+							col = cell.Y
+							rowColCount[row]++
+							rowColCount[col]++
+						} else {
+							if cell.X == row {
+								rowColCount[row]++
+							}
+							if cell.Y == col {
+								rowColCount[col]++
+							}
+						}
+						i++
+					}
+					if rowColCount[row] == c {
+						// Invio value a tutta la riga (tranne alle celle di questa griglia)
+						for c := 0; c < 9; c++ {
+							if c < startCol || c > startCol+2 {
+								S.notContain[row][c] <- value + 1
+							}
+						}
+					} else if rowColCount[col] == c {
+						// Invio value a tutta la riga (tranne alle celle di questa griglia)
+						for c := 0; c < 9; c++ {
+							if c < startRow || c > startRow+2 {
+								S.notContain[c][col] <- value + 1
+							}
+						}
+					}
 				}
 			}
 		}
@@ -442,7 +505,8 @@ func main() {
 		if diffCells == 0 {
 			fmt.Println("The solution is 100% correct!")
 		} else {
-			fmt.Printf("The solution has %d different cells, so it's good at %d %% \n", diffCells, (81-diffCells)/81*100)
+			percent := float64(81-diffCells) / 81.0 * 100.0
+			fmt.Printf("The solution has %d different cells, so it's good at %.2f %% \n", diffCells, percent)
 		}
 	}
 }
