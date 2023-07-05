@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"log"
 	"math/rand"
 	"os"
 	"strconv"
@@ -58,7 +59,6 @@ func SolveSquare(x, y int, notContain <-chan int, done chan Solution, tempElim c
 		}
 
 		if c == 8 {
-			//fmt.Printf("X: %d, Y: %d, SOLUTION: %d\n", x, y, s)
 			done <- Solution{x, y, s}
 			for range notContain {
 			}
@@ -82,9 +82,10 @@ func NewSolver() (S *Solver) {
 	return S
 }
 
-func (S *Solver) SolveSudoku() [9][9]int {
+func (S *Solver) SolveSudoku(enableLockedCand *int) [9][9]int {
 	responses := 0
-	//startGridCheck := false
+	countLockedGrid := 0
+	countIteration := 0
 	for {
 		select {
 		case u := <-S.done:
@@ -104,7 +105,6 @@ func (S *Solver) SolveSudoku() [9][9]int {
 			S.tempBoard[u.y][u.x] = array
 
 			fmt.Printf("Step: %d %#v\n", responses, u)
-			//fmt.Println(S.solvedSudokuBoard)
 			responses++
 
 			if responses == 81 {
@@ -114,24 +114,19 @@ func (S *Solver) SolveSudoku() [9][9]int {
 		case elim := <-S.tempElim:
 			S.tempBoard[elim.y][elim.x] = elim.eliminatedValues
 		case <-time.After(1 * time.Second):
-			/*for i := 0; i < 9; i++ {
-				for j := 0; j < 9; j++ {
-					fmt.Printf("cella [%d][%d] = %v\n", i, j, S.tempBoard[i][j])
-				}
-			}*/
+			countIteration++
+			if countIteration > 50 {
+				return S.solvedSudokuBoard
+			}
+
 			// Inizializza il generatore di numeri casuali con un seed diverso ad ogni esecuzione
 			rand.Seed(time.Now().UnixNano())
 
 			// Genera un numero casuale tra 0 e 8 compresi
-			randomChoice := rand.Intn(2)
-			//randomNumber := rand.Intn(9)
-			/*if randomChoice == 0 {
-				S.callGrid[randomNumber] <- 1
-			} else {
-				S.callRow[randomNumber] <- 1
-			}*/
-			if randomChoice == 0 {
-				fmt.Println("Grid Check")
+			randomChoice := rand.Intn(9)
+
+			if *enableLockedCand == 0 {
+				fmt.Println("Grids Check")
 				S.callGrid[0] <- 1
 				S.callGrid[1] <- 1
 				S.callGrid[2] <- 1
@@ -150,11 +145,34 @@ func (S *Solver) SolveSudoku() [9][9]int {
 				S.callRow[6] <- 1
 				S.callRow[7] <- 1
 				S.callRow[8] <- 1
+			} else if countLockedGrid < 5 {
+				fmt.Println("Grids Check")
+				S.callGrid[0] <- 1
+				S.callGrid[1] <- 1
+				S.callGrid[2] <- 1
+				S.callGrid[3] <- 1
+				S.callGrid[4] <- 1
+				S.callGrid[5] <- 1
+				S.callGrid[6] <- 1
+				S.callGrid[7] <- 1
+				S.callGrid[8] <- 1
+				S.callRow[0] <- 1
+				S.callRow[1] <- 1
+				S.callRow[2] <- 1
+				S.callRow[3] <- 1
+				S.callRow[4] <- 1
+				S.callRow[5] <- 1
+				S.callRow[6] <- 1
+				S.callRow[7] <- 1
+				S.callRow[8] <- 1
+				countLockedGrid++
 			} else {
+				countLockedGrid = 0
 				fmt.Println("Locked Check")
-				randomNumber := rand.Intn(9)
-				S.callLockedGrid[randomNumber] <- 1
-				S.callLockedGrid[randomNumber+1%9] <- 1
+				S.callLockedGrid[randomChoice] <- 1
+				S.callLockedGrid[(randomChoice+1)%9] <- 1
+				S.callLockedGrid[(randomChoice+2)%9] <- 1
+				S.callLockedGrid[(randomChoice+3)%9] <- 1
 			}
 		}
 	}
@@ -201,9 +219,7 @@ func (S *Solver) CheckGrid(i int, j int, activate <-chan int) {
 	startRow := i * 3 // es i=1 ->  sr = 3
 	startCol := j * 3
 
-	for {
-		<-activate
-		//fmt.Printf("Start grid check for [%d,%d]\n\n", i, j)
+	for range activate {
 
 		var callWithOneValue [3][3]int
 
@@ -218,7 +234,6 @@ func (S *Solver) CheckGrid(i int, j int, activate <-chan int) {
 				}
 				if count >= 2 {
 					callWithOneValue[row-startRow][col-startCol] = 1
-					//fmt.Printf("Cella [%d,%d] inclusa", row, col)
 				}
 			}
 		}
@@ -241,29 +256,16 @@ func (S *Solver) CheckGrid(i int, j int, activate <-chan int) {
 			}
 		}
 
-		/*for key, value := range valueCount {
-			fmt.Printf("Chiave: %d, Valore: %d\n da griglia [%d,%d]", key, value, i, j)
-		}
-		for key, coordinates := range cellTrack {
-			fmt.Printf("Chiave: %d\n", key)
-			for _, coord := range coordinates {
-				fmt.Printf("Coordinate: X=%d, Y=%d\n", coord.X, coord.Y)
-			}
-		}*/
-
 		// Verifica se esiste un unico valore che può essere assegnato
 		for value, c := range valueCount {
-			//fmt.Printf("Value: %d, C: %d", value, c)
 			if c == 1 {
 				var cell = cellTrack[value]
-				//fmt.Printf("Lenght: %d", len(cell))
 				if len(cell) == 1 {
 					for i := 1; i <= 9; i++ {
 						if i != (value + 1) {
 							S.notContain[cell[0].X][cell[0].Y] <- i
 						}
 					}
-					//fmt.Printf("Unique value %d can be assigned to cell [%d,%d] in grid (%d,%d)\n", value+1, cell[0].X, cell[0].Y, i, j)
 				}
 			}
 		}
@@ -296,10 +298,7 @@ func (S *Solver) StartRowCheck() {
 }
 
 func (S *Solver) CheckRow(rowN int, activate <-chan int) {
-	for {
-		<-activate
-
-		//fmt.Printf("Start row check for [%d]\n\n", rowN)
+	for range activate {
 
 		var cellWithOneValue [9]int
 
@@ -334,17 +333,14 @@ func (S *Solver) CheckRow(rowN int, activate <-chan int) {
 
 		// Verifica se esiste un unico valore che può essere assegnato
 		for value, c := range valueCount {
-			//fmt.Printf("Value: %d, C: %d", value, c)
 			if c == 1 {
 				var cell = cellTrack[value]
-				//fmt.Printf("Lenght: %d", len(cell))
 				if len(cell) == 1 {
 					for v := 1; v <= 9; v++ {
 						if v != (value + 1) {
 							S.notContain[rowN][cell[0]] <- v
 						}
 					}
-					//fmt.Printf("Unique value %d can be assigned to cell [%d,%d] in cell (%d)\n", value+1, rowN, cell[0], rowN)
 				}
 			}
 		}
@@ -356,8 +352,7 @@ func (S *Solver) CheckLockedCandidate(i int, j int, activate <-chan int) {
 	startRow := i * 3 // es i=1 ->  sr = 3
 	startCol := j * 3
 
-	for {
-		<-activate
+	for range activate {
 
 		var callWithOneValue [3][3]int
 
@@ -372,7 +367,6 @@ func (S *Solver) CheckLockedCandidate(i int, j int, activate <-chan int) {
 				}
 				if count >= 2 {
 					callWithOneValue[row-startRow][col-startCol] = 1
-					//fmt.Printf("Cella [%d,%d] inclusa", row, col)
 				}
 			}
 		}
@@ -487,41 +481,60 @@ func ReadSudokuFromFile(filePath string) ([9][9]int, error) {
 	return sudoku, nil
 }
 
-func CompareSudokuMatrices(matrix1, matrix2 [9][9]int) int {
-	differenceCount := 0
-
+func CompareSudokuMatrices(matrix1, matrix2 [9][9]int) []Coordinates {
+	var differences []Coordinates
 	for row := 0; row < 9; row++ {
 		for col := 0; col < 9; col++ {
 			if matrix1[row][col] != matrix2[row][col] {
-				differenceCount++
+				position := Coordinates{X: row, Y: col}
+				differences = append(differences, position)
 			}
 		}
 	}
 
-	return differenceCount
+	return differences
 }
 
-// Works for easy but not medium
 func main() {
 
 	// Definisci un flag di tipo string per il percorso del file
-	filePath := flag.String("file", "", "Percorso del file di input")
-	solutionFilePath := flag.String("solution", "", "Percorso del secondo file di input")
+	filePath := flag.String("file", "", "Path to the input file")
+	solutionFilePath := flag.String("solution", "", "Path to the solution file")
+	enableLockCand := flag.Int("enableLockCand", 0, "Enable to use the locked candidate technique (0 or 1)")
+
+	showHelp := flag.Bool("help", false, "Display the list of available flags")
 	flag.Parse()
 
-	if *filePath == "" {
-		fmt.Println("Percorso del file mancante. Utilizzo: go run main.go -file <percorso_file>")
+	// Check if the help flag is set
+	if *showHelp {
+		flag.Usage() // Display the list of available flags
 		return
+	}
+
+	if *filePath == "" {
+		flag.Usage()
+		log.Fatal("Input file path is missing")
 	}
 
 	sudoku, err := ReadSudokuFromFile(*filePath)
 	if err != nil {
-		fmt.Println("Errore durante la lettura del file:", err)
-		return
+		log.Fatalf("Error reading file: %v", err)
 	}
 
 	startTime := time.Now()
 	solver := NewSolver()
+	setInitialValues(solver, sudoku)
+	solution := solver.SolveSudoku(enableLockCand)
+	elapsedTime := time.Since(startTime).Seconds()
+
+	printSolutionAndTime(solution, elapsedTime)
+
+	if *solutionFilePath != "" {
+		compareWithSolutionFile(solution, *solutionFilePath)
+	}
+}
+
+func setInitialValues(solver *Solver, sudoku [9][9]int) {
 	for y := 0; y < 9; y++ {
 		for x := 0; x < 9; x++ {
 			if sudoku[y][x] != 0 {
@@ -529,27 +542,31 @@ func main() {
 			}
 		}
 	}
-	solution := solver.SolveSudoku()
-	elapsedTime := time.Since(startTime).Seconds()
-	elapsedTimeFormatted := fmt.Sprintf("%.4f", elapsedTime)
+}
+
+func printSolutionAndTime(solution [9][9]int, elapsedTime float64) {
 	fmt.Println("Last solution")
 	PrettyPrintSudoku(solution)
-	fmt.Println("Elapsed time:", elapsedTimeFormatted)
-	// Leggi il secondo file se il percorso è stato specificato
-	if *solutionFilePath != "" {
-		fmt.Println("Comparing result with real solution...")
-		realSolution, err := ReadSudokuFromFile(*solutionFilePath)
-		if err != nil {
-			fmt.Println("Errore durante la lettura del secondo file:", err)
-			return
-		}
-		diffCells := CompareSudokuMatrices(solution, realSolution)
+	fmt.Printf("Elapsed time: %.4f s\n", elapsedTime)
+}
 
-		if diffCells == 0 {
-			fmt.Println("The solution is 100% correct!")
-		} else {
-			percent := float64(81-diffCells) / 81.0 * 100.0
-			fmt.Printf("The solution has %d different cells, so it's good at %.2f %% \n", diffCells, percent)
+func compareWithSolutionFile(solution [9][9]int, solutionFilePath string) {
+	fmt.Println("Comparing result with the actual solution...")
+	realSolution, err := ReadSudokuFromFile(solutionFilePath)
+	if err != nil {
+		log.Fatalf("Error reading the solution file: %v", err)
+	}
+
+	diffCells := CompareSudokuMatrices(solution, realSolution)
+	percent := float64(81-len(diffCells)) / 81.0 * 100.0
+
+	if len(diffCells) == 0 {
+		fmt.Println("The solution is 100% correct!")
+	} else {
+		fmt.Printf("The solution has %d different cells, so it's %.2f%% correct\n", len(diffCells), percent)
+		fmt.Println("Coordinates of differing cells:")
+		for _, coord := range diffCells {
+			fmt.Printf("Cell at position (%d, %d)\n", coord.X, coord.Y)
 		}
 	}
 }
