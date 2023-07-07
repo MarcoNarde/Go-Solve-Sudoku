@@ -18,9 +18,8 @@ type Solution struct { //Square
 	v int // content of the cell in (x,y)
 }
 
-// TODO: invertire i termini, o cambiare nome in row e col
 type Coordinates struct {
-	X, Y int
+	Row, Col int
 }
 
 type TemporalElim struct {
@@ -37,6 +36,7 @@ type Solver struct {
 	solvedSudokuBoard [9][9]int
 	callGrid          [9]chan int
 	callRow           [9]chan int
+	callCol           [9]chan int
 	callLockedGrid    [9]chan int
 }
 
@@ -78,6 +78,7 @@ func NewSolver() (S *Solver) {
 	}
 	S.StartGridCheck()
 	S.StartRowCheck()
+	S.StartColCheck()
 	S.StartLockedCandCheck()
 	return S
 }
@@ -125,55 +126,30 @@ func (S *Solver) SolveSudoku(enableLockedCand *int) [9][9]int {
 			// Genera un numero casuale tra 0 e 8 compresi
 			randomChoice := rand.Intn(9)
 
-			if *enableLockedCand == 0 {
-				fmt.Println("Grids Check")
-				S.callGrid[0] <- 1
-				S.callGrid[1] <- 1
-				S.callGrid[2] <- 1
-				S.callGrid[3] <- 1
-				S.callGrid[4] <- 1
-				S.callGrid[5] <- 1
-				S.callGrid[6] <- 1
-				S.callGrid[7] <- 1
-				S.callGrid[8] <- 1
-				S.callRow[0] <- 1
-				S.callRow[1] <- 1
-				S.callRow[2] <- 1
-				S.callRow[3] <- 1
-				S.callRow[4] <- 1
-				S.callRow[5] <- 1
-				S.callRow[6] <- 1
-				S.callRow[7] <- 1
-				S.callRow[8] <- 1
-			} else if countLockedGrid < 5 {
-				fmt.Println("Grids Check")
-				S.callGrid[0] <- 1
-				S.callGrid[1] <- 1
-				S.callGrid[2] <- 1
-				S.callGrid[3] <- 1
-				S.callGrid[4] <- 1
-				S.callGrid[5] <- 1
-				S.callGrid[6] <- 1
-				S.callGrid[7] <- 1
-				S.callGrid[8] <- 1
-				S.callRow[0] <- 1
-				S.callRow[1] <- 1
-				S.callRow[2] <- 1
-				S.callRow[3] <- 1
-				S.callRow[4] <- 1
-				S.callRow[5] <- 1
-				S.callRow[6] <- 1
-				S.callRow[7] <- 1
-				S.callRow[8] <- 1
+			const gridCount = 9
+
+			fmt.Println("Grids Check")
+			for i := 0; i < gridCount; i++ {
+				S.callGrid[i] <- 1
+			}
+			for i := 0; i < gridCount; i++ {
+				S.callRow[i] <- 1
+			}
+			for i := 0; i < gridCount; i++ {
+				S.callCol[i] <- 1
+			}
+
+			if *enableLockedCand == 0 || countLockedGrid < 5 {
 				countLockedGrid++
 			} else {
 				countLockedGrid = 0
 				fmt.Println("Locked Check")
 				S.callLockedGrid[randomChoice] <- 1
-				S.callLockedGrid[(randomChoice+1)%9] <- 1
-				S.callLockedGrid[(randomChoice+2)%9] <- 1
-				S.callLockedGrid[(randomChoice+3)%9] <- 1
+				S.callLockedGrid[(randomChoice+1)%gridCount] <- 1
+				S.callLockedGrid[(randomChoice+2)%gridCount] <- 1
+				S.callLockedGrid[(randomChoice+3)%gridCount] <- 1
 			}
+
 		}
 	}
 
@@ -263,7 +239,7 @@ func (S *Solver) CheckGrid(i int, j int, activate <-chan int) {
 				if len(cell) == 1 {
 					for i := 1; i <= 9; i++ {
 						if i != (value + 1) {
-							S.notContain[cell[0].X][cell[0].Y] <- i
+							S.notContain[cell[0].Row][cell[0].Col] <- i
 						}
 					}
 				}
@@ -294,6 +270,13 @@ func (S *Solver) StartRowCheck() {
 	for i := 0; i < 9; i++ {
 		S.callRow[i] = make(chan int)
 		go S.CheckRow(i, S.callRow[i])
+	}
+}
+
+func (S *Solver) StartColCheck() {
+	for i := 0; i < 9; i++ {
+		S.callCol[i] = make(chan int)
+		go S.CheckCol(i, S.callCol[i])
 	}
 }
 
@@ -398,15 +381,15 @@ func (S *Solver) CheckLockedCandidate(i int, j int, activate <-chan int) {
 				rowColCount := make(map[int]int)
 				for _, cell := range cells {
 					if i == 0 {
-						row = cell.X
-						col = cell.Y
+						row = cell.Row
+						col = cell.Col
 						rowColCount[row]++
 						rowColCount[col]++
 					} else {
-						if cell.X == row {
+						if cell.Row == row {
 							rowColCount[row]++
 						}
-						if cell.Y == col {
+						if cell.Col == col {
 							rowColCount[col]++
 						}
 					}
@@ -424,6 +407,56 @@ func (S *Solver) CheckLockedCandidate(i int, j int, activate <-chan int) {
 					for c := 0; c < 9; c++ {
 						if c < startRow || c > startRow+2 {
 							S.notContain[c][col] <- value + 1
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+func (S *Solver) CheckCol(colN int, activate chan int) {
+	for range activate {
+
+		var cellWithOneValue [9]int
+
+		// Controllo le celle che contengono almeno 2 valori
+		for row := 0; row < 9; row++ {
+			var count = 0
+			for i := 0; i < 9; i++ {
+				if S.tempBoard[row][colN][i] != 0 {
+					count++
+				}
+			}
+			if count >= 2 {
+				cellWithOneValue[row] = 1
+			}
+		}
+
+		// Mappa per conteggiare la frequenza dei valori
+		valueCount := make(map[int]int)
+		cellTrack := make(map[int][]int)
+
+		// Scorrimento delle caselle nella griglia corrente e conteggio dei valori
+		for row := 0; row < 9; row++ {
+			if cellWithOneValue[row] == 1 {
+				for i := 0; i < 9; i++ {
+					if S.tempBoard[row][colN][i] != 0 {
+						valueCount[i]++
+						cellTrack[i] = append(cellTrack[i], row)
+					}
+				}
+			}
+		}
+
+		// Verifica se esiste un unico valore che può essere assegnato
+		for value, c := range valueCount {
+			if c == 1 {
+				var cell = cellTrack[value]
+				if len(cell) == 1 {
+					for v := 1; v <= 9; v++ {
+						if v != (value + 1) {
+							S.notContain[cell[0]][colN] <- v
 						}
 					}
 				}
@@ -486,7 +519,7 @@ func CompareSudokuMatrices(matrix1, matrix2 [9][9]int) []Coordinates {
 	for row := 0; row < 9; row++ {
 		for col := 0; col < 9; col++ {
 			if matrix1[row][col] != matrix2[row][col] {
-				position := Coordinates{X: row, Y: col}
+				position := Coordinates{Row: row, Col: col}
 				differences = append(differences, position)
 			}
 		}
@@ -566,7 +599,7 @@ func compareWithSolutionFile(solution [9][9]int, solutionFilePath string) {
 		fmt.Printf("The solution has %d different cells, so it's %.2f%% correct\n", len(diffCells), percent)
 		fmt.Println("Coordinates of differing cells:")
 		for _, coord := range diffCells {
-			fmt.Printf("Cell at position (%d, %d)\n", coord.X, coord.Y)
+			fmt.Printf("Cell at position (%d, %d)\n", coord.Row, coord.Col)
 		}
 	}
 }
